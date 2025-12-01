@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">hybryd_szyfrowanie</string>
+
+        <string name="generate_public_key">Generuj i wyślij klucz publiczny</string>
+        <string name="receive_aes_secret">Odbierz wspólny sekret AES</string>
+        <string name="receive_decrypt_message">Odbierz i odszyfruj wiadomość</string>
+        <string name="status_label">Status:</string>
+        <string name="encrypted_message_label">Zaszyfrowana wiadomość:</string>
+        <string name="decrypted_message_label">Odszyfrowana wiadomość:</string>
+
+</resources>
