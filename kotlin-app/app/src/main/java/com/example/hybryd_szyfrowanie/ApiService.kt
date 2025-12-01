@@ -47,5 +47,29 @@ class ApiService {
                 }
             }.start()
         }
+
+        fun getEncryptedSecret(callback: (success: Boolean, encryptedSecret: String?, message: String) -> Unit) {
+            Thread {
+                try {
+                    val request = Request.Builder()
+                        .url("$BASE_URL/get-secret")
+                        .get()
+                        .build()
+
+                    val response = client.newCall(request).execute()
+
+                    if (response.isSuccessful) {
+                        val responseBody = response.body?.string()
+                        val json = JSONObject(responseBody)
+                        val encryptedSecret = json.getString("encrypted_secret")
+                        callback(true, encryptedSecret, "Sekret pobrany pomyślnie")
+                    } else {
+                        callback(false, null, "Błąd HTTP: ${response.code}")
+                    }
+                } catch (e: Exception) {
+                    callback(false, null, "Błąd: ${e.message}")
+                }
+            }.start()
+        }
     }
 }
