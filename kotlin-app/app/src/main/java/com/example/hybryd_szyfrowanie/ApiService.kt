@@ -71,5 +71,29 @@ class ApiService {
                 }
             }.start()
         }
+
+        fun getEncryptedMessage(callback: (success: Boolean, ciphertext: String?, message: String) -> Unit) {
+            Thread {
+                try {
+                    val request = Request.Builder()
+                        .url("$BASE_URL/get-message")
+                        .get()
+                        .build()
+
+                    val response = client.newCall(request).execute()
+
+                    if (response.isSuccessful) {
+                        val responseBody = response.body?.string()
+                        val json = JSONObject(responseBody)
+                        val ciphertext = json.getString("ciphertext")
+                        callback(true, ciphertext, "Wiadomość pobrana pomyślnie")
+                    } else {
+                        callback(false, null, "Błąd HTTP: ${response.code}")
+                    }
+                } catch (e: Exception) {
+                    callback(false, null, "Błąd: ${e.message}")
+                }
+            }.start()
+        }
     }
 }
