@@ -8,65 +8,71 @@ import time
 
 from cryptography.hazmat.primitives.serialization import (
     load_pem_public_key,
-    Encoding, PublicFormat
+    load_der_public_key,
 )
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-app = FastAPI(title="Hybrid Enryption Service")
+app = FastAPI(title="Hybrid Encryption Service")
 
 lock = threading.Lock()
 
-client_public_key_pem: Optional[bytes] = None
-aes_key: Optional[bytes] = None 
+client_public_key_bytes: Optional[bytes] = None
+aes_key: Optional[bytes] = None
 
 class RegisterKeyRequest(BaseModel):
     public_key: str  
 
 @app.post("/register-key")
 async def register_key(req: RegisterKeyRequest):
-    global client_public_key_pem
+    global client_public_key_bytes
+
     try:
         raw = base64.b64decode(req.public_key)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid base64: {e}")
     try:
-
-        pub = load_pem_public_key(raw)
+        _ = load_pem_public_key(raw)
+        with lock:
+            client_public_key_bytes = raw[:]  
+        return {"status": "ok", "format": "PEM"}
     except Exception:
-        try:
-            # Spróbuj jeszcze z parsed DER
-            from cryptography.hazmat.primitives.serialization import load_der_public_key
-            pub = load_der_public_key(raw)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Unable to parse public key: {e}")
+        pass
 
-    with lock:
-        client_public_key_pem = raw  # przechowujemy surowe bytes (PEM lub DER)
-    return {"status": "ok"}
+    try:
+        _ = load_der_public_key(raw)
+        with lock:
+            client_public_key_bytes = raw[:]
+        return {"status": "ok", "format": "DER"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Unable to parse public key: {e}")
 
 @app.get("/get-secret")
 async def get_secret():
+    global client_public_key_bytes, aes_key
 
-    global client_public_key_pem, aes_key
     with lock:
-        if client_public_key_pem is None:
+        if client_public_key_bytes is None:
             raise HTTPException(status_code=404, detail="No public key registered")
         if aes_key is None:
             aes_key = os.urandom(32)  
 
+        raw_key = client_public_key_bytes[:]
+
+    try:
+        public_key = load_pem_public_key(raw_key)
+    except Exception:
         try:
-            public_key = load_pem_public_key(client_public_key_pem)
-        except Exception:
-            from cryptography.hazmat.primitives.serialization import load_der_public_key
-            public_key = load_der_public_key(client_public_key_pem)
+            public_key = load_der_public_key(raw_key)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid stored public key: {e}")
 
     encrypted = public_key.encrypt(
         aes_key,
         padding.OAEP(
-            mgf=padding.MGF1(algorithm=hashes.SHA256()),
-            algorithm=hashes.SHA256(),
+            mgf=padding.MGF1(algorithm=hashes.SHA1()),
+            algorithm=hashes.SHA1(),
             label=None
         )
     )
@@ -74,23 +80,20 @@ async def get_secret():
 
 @app.get("/get-message")
 async def get_message():
-  
     global aes_key
     with lock:
         if aes_key is None:
             raise HTTPException(status_code=404, detail="AES key not established yet")
+        key = aes_key[:]
 
-        key = aes_key
 
     ts = int(time.time())
     plaintext = f"Pozdrowienia z serwera, czas: {ts}".encode("utf-8")
 
-  
-    iv = os.urandom(12)  # 96-bit recommended IV for GCM
+    iv = os.urandom(12)
     aesgcm = AESGCM(key)
-    ciphertext_and_tag = aesgcm.encrypt(iv, plaintext, associated_data=None)
+    ciphertext_and_tag = aesgcm.encrypt(iv, plaintext, None)
 
     composed = iv + ciphertext_and_tag
-    b64 = base64.b64encode(composed).decode()
 
-    return {"ciphertext": b64}
+    return {"ciphertext": base64.b64encode(composed).decode()}
